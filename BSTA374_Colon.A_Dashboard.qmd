@@ -1,7 +1,7 @@
 ---
 title: "Pennsylvania Drug Overdose Dashboard"
 subtitle: "BSTA 374 · 15 points · Due Tuesday, November 17, 2026, 11:59 pm"
-author: "Eric M. Delmelle · Lehigh University"
+author: "Aaron Colon · Lehigh University"
 format:
   html:
     theme: cosmo
