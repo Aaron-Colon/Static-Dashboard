@@ -1,5 +1,5 @@
 ---
-title: "Milestone M1 --- Static Dashboard"
+title: "Pennsylvania Drug Overdose Dashboard"
 subtitle: "BSTA 374 · 15 points · Due Tuesday, November 17, 2026, 11:59 pm"
 author: "Eric M. Delmelle · Lehigh University"
 format:
@@ -13,6 +13,12 @@ format:
     code-copy: true
     highlight-style: github
     embed-resources: true
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    source_code: embed
+---
 ---
 
 ## What M1 is
@@ -178,12 +184,15 @@ sum(is.na(my_map$cases))
 my_map$NAME[is.na(my_map$cases)]
 
 # 9. Check unmatched geographic IDs
-anti_join(
+nrow(anti_join(
   st_drop_geometry(pa_counties),
   by_area,
   by = "GEOID"
-)
+))
 ```
+
+We imported CDC provisional drug overdose death data and filtered it to Pennsylvania's 67 counties. We cleaned the data by formatting FIPS codes, converting dates, and extracting overdose death counts. We created county-level (`by_area`) and monthly (`by_period`) summaries and joined the county data to Pennsylvania's geographic boundaries using GEOID. All 67 counties were matched, but 24 counties had missing or suppressed death counts, which were retained as NA values rather than zero.
+
 ---
 
 ## Part B --- The map (3.5 points)
@@ -222,7 +231,67 @@ instead of percentiles.
   it**, so that the reader can tell whether a dark colour rests on many cases
   or on a handful;
 - a `>` note under the map says, in one sentence, what the colours mean.
+```{r}
 
+library(leaflet)
+
+# Quintile breaks for county death counts
+breaks <- unique(as.numeric(quantile(
+  my_map$cases,
+  probs = seq(0, 1, 0.2),
+  na.rm = TRUE
+)))
+
+# Sequential yellow-to-red palette
+pal <- colorBin(
+  "YlOrRd",
+  domain = my_map$cases,
+  bins = breaks,
+  na.color = "#D9D9D9",
+  pretty = FALSE
+)
+
+# County hover labels
+my_map <- my_map |>
+  mutate(
+    hover_text = if_else(
+      is.na(cases),
+      paste0(NAME, ": Count suppressed"),
+      paste0(
+        NAME, ": ",
+        format(cases, big.mark = ",", trim = TRUE),
+        " overdose deaths (12-month total)"
+      )
+    )
+  )
+
+# Create map
+leaflet(my_map) |>
+  addTiles() |>
+  addPolygons(
+    color = "white",
+    weight = 1,
+    fillColor = ~pal(cases),
+    fillOpacity = 0.85,
+    label = ~hover_text,
+    highlightOptions = highlightOptions(
+      color = "#333333",
+      weight = 2,
+      bringToFront = TRUE
+    )
+  ) |>
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = ~cases,
+    title = "Drug overdose deaths (12-month count)",
+    opacity = 0.85,
+    na.label = "Suppressed"
+  )
+
+```
+
+Darker red counties represent higher reported numbers of drug overdose deaths, while lighter yellow counties represent lower counts. Gray counties represent suppressed data, meaning their overdose death counts were withheld to protect privacy or because the counts were too small to report reliably. These missing values do not indicate that zero overdose deaths occurred.
 ---
 
 ## Part C --- The time series (3.5 points)
@@ -413,6 +482,75 @@ labels that identify no one, a legend if the points are coloured, a title with
 what, where and when, and the note on the missing denominator; in C, the
 y-axis as counts per period (or the density legend), and a note on what the
 panel shows.
+```{r}
+
+library(ggplot2)
+library(dplyr)
+
+# Philadelphia time series
+focus_data <- dat |>
+  filter(county == focus) |>
+  transmute(month, cases = deaths)
+
+# Combine Pennsylvania and Philadelphia
+series_data <- bind_rows(
+  by_period |>
+    transmute(
+      month, cases,
+      area = "Pennsylvania (available counties)"
+    ),
+  focus_data |>
+    transmute(
+      month, cases,
+      area = paste0(focus, " County")
+    )
+)
+
+# Create time series
+p <- ggplot(
+  series_data,
+  aes(x = month, y = cases)
+) +
+  geom_line(
+    color = "#B2182B",
+    linewidth = 1.1
+  ) +
+  facet_wrap(
+    ~area,
+    ncol = 1,
+    scales = "free_y"
+  ) +
+  scale_x_date(
+    date_breaks = "1 year",
+    date_labels = "%Y"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_comma()
+  ) +
+  labs(
+    title = "Drug Overdose Deaths Over Time",
+    subtitle = "Pennsylvania and Philadelphia, 2020–2026",
+    x = "Year",
+    y = "Overdose deaths (rolling 12-month count)",
+    caption = paste(
+      "Pennsylvania totals exclude suppressed counts.",
+      "Panels use different y-axis scales."
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+p
+
+```
+
+We created a time series graph to examine changes in drug overdose deaths in Pennsylvania and Philadelphia County from 2020 to 2026. We used two separate graphs with different y-axis scales to make the trends easier to compare, since Pennsylvania has substantially more deaths than Philadelphia alone. The data represent rolling 12-month death counts.
+
+The graphs show that overdose deaths initially increased in both areas before declining. Pennsylvania reached its highest levels around 2022, while Philadelphia peaked around mid-2023. After these peaks, both areas experienced substantial decreases through early 2026. This suggests an overall improvement in overdose mortality trends, although the data do not establish what caused the decline. Additionally, statewide totals exclude suppressed county counts, meaning the reported totals may underestimate the actual number of deaths.
 
 ---
 
@@ -443,6 +581,16 @@ were computed; the source, with a link if there is one; the areas without data
 (Part A); and **one limitation** of your data, such as suppressed small counts,
 missing years or boundary changes. Your final dashboard has to state these
 limits in the app itself, so this panel carries over.
+
+### About These Data
+
+- Outcome: Provisional drug overdose death counts from January 2020 through March 2026, reported as rolling 12-month totals.
+- Population at risk: Residents of Pennsylvania's 67 counties.
+- Geography: All 67 Pennsylvania counties, using county-level FIPS codes and geographic boundaries from the U.S. Census Bureau.
+- Method: County-level overdose death counts were used for the map, while monthly rolling 12-month counts were used to examine trends over time. Available county counts were summed for the Pennsylvania time series. No population-adjusted rates or expected counts were calculated.
+- Source: Centers for Disease Control and Prevention (CDC), National Center for Health Statistics, [VSRR Provisional County-Level Drug Overdose Death Counts](https://data.cdc.gov/d/gb4e-yj24). Geographic boundaries were obtained through the `tigris` R package.
+- Areas without data: Of the 67 counties, 24 had suppressed death counts in the most recent period because of CDC confidentiality requirements. These were retained as missing values rather than zeros.
+- Limitations: The data are provisional and may change as additional deaths are reported or investigated. Suppressed counts result in incomplete statewide totals. Additionally, raw death counts do not account for population differences between counties, limiting direct comparisons of overdose mortality risk.
 
 ---
 
