@@ -292,6 +292,7 @@ leaflet(my_map) |>
 ```
 
 Darker red counties represent higher reported numbers of drug overdose deaths, while lighter yellow counties represent lower counts. Gray counties represent suppressed data, meaning their overdose death counts were withheld to protect privacy or because the counts were too small to report reliably. These missing values do not indicate that zero overdose deaths occurred.
+
 ---
 
 ## Part C --- The time series (3.5 points)
@@ -584,13 +585,13 @@ limits in the app itself, so this panel carries over.
 
 ### About These Data
 
-- Outcome: Provisional drug overdose death counts from January 2020 through March 2026, reported as rolling 12-month totals.
-- Population at risk: Residents of Pennsylvania's 67 counties.
-- Geography: All 67 Pennsylvania counties, using county-level FIPS codes and geographic boundaries from the U.S. Census Bureau.
-- Method: County-level overdose death counts were used for the map, while monthly rolling 12-month counts were used to examine trends over time. Available county counts were summed for the Pennsylvania time series. No population-adjusted rates or expected counts were calculated.
-- Source: Centers for Disease Control and Prevention (CDC), National Center for Health Statistics, [VSRR Provisional County-Level Drug Overdose Death Counts](https://data.cdc.gov/d/gb4e-yj24). Geographic boundaries were obtained through the `tigris` R package.
-- Areas without data: Of the 67 counties, 24 had suppressed death counts in the most recent period because of CDC confidentiality requirements. These were retained as missing values rather than zeros.
-- Limitations: The data are provisional and may change as additional deaths are reported or investigated. Suppressed counts result in incomplete statewide totals. Additionally, raw death counts do not account for population differences between counties, limiting direct comparisons of overdose mortality risk.
+- **Outcome:** Provisional drug overdose death counts from January 2020 through March 2026, reported as rolling 12-month totals.
+- **Population at risk:** Residents of Pennsylvania's 67 counties.
+- **Geography:** All 67 Pennsylvania counties, using county-level FIPS codes and geographic boundaries from the U.S. Census Bureau.
+- **Method:** County-level overdose death counts were used for the map, while monthly rolling 12-month counts were used to examine trends over time. Available county counts were summed for the Pennsylvania time series. No population-adjusted rates or expected counts were calculated.
+- **Source:** Centers for Disease Control and Prevention (CDC), National Center for Health Statistics, [VSRR Provisional County-Level Drug Overdose Death Counts](https://data.cdc.gov/d/gb4e-yj24). Geographic boundaries were obtained through the `tigris` R package.
+- **Areas without data:** Of the 67 counties, 24 had suppressed death counts in the most recent period because of CDC confidentiality requirements. These were retained as missing values rather than zeros.
+- **Limitations:** The data are provisional and may change as additional deaths are reported or investigated. Suppressed counts result in incomplete statewide totals. Additionally, raw death counts do not account for population differences between counties, limiting direct comparisons of overdose mortality risk.
 
 ---
 
@@ -622,6 +623,8 @@ of the lecture cover most problems.
 Two or three sentences in the text box of your submission: **which** tools you
 used, **what** for, and at **which stage** (planning, coding, debugging,
 interpreting, writing). No amount of disclosed use costs points.
+
+ChatGPT was used to assist with coding, debugging, and interpreting results throughout the development of my dashboard. Specifically, AI helped with cleaning and organizing the CDC overdose dataset, creating the choropleth map and time series, and explaining data suppression and limitations. I reviewed the generated code and visualizations to ensure they accurately represented the data.
 
 ---
 
