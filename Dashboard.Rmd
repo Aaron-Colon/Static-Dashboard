@@ -59,7 +59,7 @@ census_pa <- read_csv(
     county = str_remove_all(
       V1, "^\\.| County, Pennsylvania$"
     ),
-    population_2025 = as.numeric(V8)
+    population_2025 = readr::parse_number(as.character(V8))
   )
 
 # Verify all 67 counties were loaded
