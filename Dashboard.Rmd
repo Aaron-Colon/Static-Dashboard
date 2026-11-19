@@ -2,7 +2,7 @@
 title: "Pennsylvania Drug Overdose Dashboard"
 author: "Aaron Colon"
 subtitle: "BSTA 374 · Milestone M1"
-  output:
+output:
   flexdashboard::flex_dashboard:
     orientation: columns
     vertical_layout: scroll
@@ -23,11 +23,7 @@ library(scales)
 
 options(tigris_use_cache = TRUE)
 
-# PART A — Data preparation. Keep this CSV in the repository's data/ folder.
-# The values are rolling 12-month death counts, NOT individual-month counts.
-# Parsing as character first preserves comma-formatted counts such as "1,000".
-
-
+# PART A — Data preparation. 
 library(tidyverse)
 
 # Read original national CDC overdose data
@@ -103,8 +99,6 @@ by_area <- dat |>
     rate = 100000 * cases / population_2025
   )
 
-# The Pennsylvania series is the sum of DISCLOSED county counts, not the
-# complete statewide count, because suppression prevents a full sum.
 by_period <- dat |>
   dplyr::group_by(month) |>
   dplyr::summarise(
@@ -113,7 +107,7 @@ by_period <- dat |>
     .groups = "drop"
   )
 
-# 2020 Census cartographic county boundaries; initial knit needs internet.
+# 2020 Census cartographic county boundaries
 pa_counties <- tigris::counties(
   state = "PA", cb = TRUE, year = 2020, progress_bar = FALSE
 ) |>
