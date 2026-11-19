@@ -1,0 +1,313 @@
+---
+title: "Pennsylvania Drug Overdose Dashboard"
+author: "Aaron Colon"
+subtitle: "BSTA 374 · Milestone M1"
+  output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+    source_code: embed
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(sf)
+library(tigris)
+library(lubridate)
+library(leaflet)
+library(ggplot2)
+library(scales)
+
+options(tigris_use_cache = TRUE)
+
+# PART A — Data preparation. Keep this CSV in the repository's data/ folder.
+# The values are rolling 12-month death counts, NOT individual-month counts.
+# Parsing as character first preserves comma-formatted counts such as "1,000".
+
+
+library(tidyverse)
+
+# Read original national CDC overdose data
+raw <- read_csv(
+  "data/VSRR_Provisional_County-Level_Drug_Overdose_Death_Counts_20261117.csv",
+  col_types = cols(
+    FIPS = col_character(),
+    `Provisional Drug Overdose Deaths` = col_character(),
+    .default = col_guess()
+  )
+)
+
+# Keep only Pennsylvania counties
+pa_data <- raw |>
+  filter(ST_ABBREV == "PA")
+
+# Check observations and counties
+nrow(pa_data)
+n_distinct(pa_data$FIPS)
+
+# Save Pennsylvania-only dataset
+write_csv(
+  pa_data,
+  "data/PA_overdose_2020_2026.csv"
+)
+
+
+raw <- readr::read_csv(
+  "data/PA_overdose_2020_2026.csv",
+  col_types = readr::cols(
+    FIPS = readr::col_character(),
+    `Provisional Drug Overdose Deaths` = readr::col_character(),
+    .default = readr::col_guess()
+  ),
+  show_col_types = FALSE
+)
+
+dat <- raw |>
+  dplyr::filter(ST_ABBREV == "PA") |>
+  dplyr::transmute(
+    GEOID = stringr::str_pad(FIPS, width = 5, side = "left", pad = "0"),
+    county = COUNTYNAME,
+    month = lubridate::mdy(MonthEndingDate),
+    deaths = readr::parse_number(`Provisional Drug Overdose Deaths`)
+  )
+
+latest_month <- max(dat$month, na.rm = TRUE)
+
+# Load 2025 Census population estimates
+census_pa <- read_csv(
+  "data/co-est2025-pop-42.csv",
+  skip = 4,
+  col_names = paste0("V", 1:8),
+  show_col_types = FALSE
+) |>
+  filter(str_detect(V1, "^\\..+ County, Pennsylvania$")) |>
+  transmute(
+    county = str_remove_all(
+      V1, "^\\.| County, Pennsylvania$"
+    ),
+    population_2025 = as.numeric(V8)
+  )
+
+# Verify all 67 counties were loaded
+nrow(census_pa)
+
+# Join overdose counts with Census populations
+by_area <- dat |>
+  filter(month == latest_month) |>
+  select(GEOID, county, cases = deaths) |>
+  left_join(census_pa, by = "county") |>
+  mutate(
+    rate = 100000 * cases / population_2025
+  )
+
+# The Pennsylvania series is the sum of DISCLOSED county counts, not the
+# complete statewide count, because suppression prevents a full sum.
+by_period <- dat |>
+  dplyr::group_by(month) |>
+  dplyr::summarise(
+    cases = sum(deaths, na.rm = TRUE),
+    n_suppressed = sum(is.na(deaths)),
+    .groups = "drop"
+  )
+
+# 2020 Census cartographic county boundaries; initial knit needs internet.
+pa_counties <- tigris::counties(
+  state = "PA", cb = TRUE, year = 2020, progress_bar = FALSE
+) |>
+  dplyr::select(GEOID, NAME, geometry) |>
+  sf::st_transform(4326)
+
+my_map <- dplyr::left_join(pa_counties, by_area, by = "GEOID")
+
+# Check a failed boundary join separately from suppressed counts.
+join_missing <- dplyr::anti_join(
+  sf::st_drop_geometry(pa_counties), by_area, by = "GEOID"
+)
+stopifnot(nrow(join_missing) == 0, nrow(my_map) == 67)
+
+focus <- "Philadelphia"
+focus_data <- dat |>
+  dplyr::filter(county == focus) |>
+  dplyr::transmute(month, cases = deaths)
+```
+
+Column {data-width=550}
+-----------------------------------------------------------------------
+
+
+### Annual overdose death rates by county, Pennsylvania — 12 months ending `r format(latest_month, "%B %Y")`
+```{r map, fig.height=6.5}
+# PART B — Annual overdose death rates per 100,000
+
+# Calculate quintile breaks using rates
+map_breaks <- unique(as.numeric(stats::quantile(
+  my_map$rate,
+  probs = seq(0, 1, 0.2),
+  na.rm = TRUE
+)))
+
+# Color palette based on rates
+pal <- leaflet::colorBin(
+  palette = "YlOrRd",
+  domain = my_map$rate,
+  bins = map_breaks,
+  na.color = "#D9D9D9",
+  pretty = FALSE
+)
+
+# County hover labels
+my_map <- my_map |>
+  dplyr::mutate(
+    hover_text = dplyr::if_else(
+      is.na(cases),
+      paste0(
+        NAME, " County: count suppressed (1–9 deaths)"
+      ),
+      paste0(
+        NAME, " County: ",
+        scales::number(rate, accuracy = 0.1),
+        " deaths per 100,000; ",
+        scales::comma(cases),
+        " overdose deaths; population ",
+        scales::comma(population_2025)
+      )
+    )
+  )
+
+# Create choropleth map
+leaflet::leaflet(my_map) |>
+  leaflet::addTiles() |>
+  leaflet::addPolygons(
+    color = "white",
+    weight = 1,
+    fillColor = ~pal(rate),
+    fillOpacity = 0.85,
+    label = ~hover_text,
+    highlightOptions = leaflet::highlightOptions(
+      color = "#333333",
+      weight = 2,
+      bringToFront = TRUE
+    )
+  ) |>
+  leaflet::addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = ~rate,
+    title = "Annual overdose deaths per 100,000",
+    opacity = 0.85,
+    na.label = "Suppressed (1–9 deaths)"
+  )
+
+```
+
+> Darker red counties represent higher annual drug overdose death rates per 100,000 residents, while lighter counties represent lower rates. Rates are calculated using rolling 12-month overdose death counts and 2025 Census population estimates. Gray counties indicate suppressed counts of 1–9 deaths, which are withheld rather than reported as zero.
+
+Column {data-width=550}
+-----------------------------------------------------------------------
+
+
+### Drug overdose deaths over time, Pennsylvania and Philadelphia — `r format(min(dat$month, na.rm = TRUE), "%Y")`–`r format(latest_month, "%Y")`
+```{r time-series, fig.height=7}
+
+# PART C — Pennsylvania and Philadelphia time series
+
+series_data <- dplyr::bind_rows(
+  by_period |>
+    dplyr::transmute(
+      month, cases,
+      area = "Pennsylvania (available counties)"
+    ),
+  focus_data |>
+    dplyr::transmute(
+      month, cases,
+      area = "Philadelphia County"
+    )
+)
+
+# Possible totals including suppressed county counts
+suppression_band <- by_period |>
+  dplyr::mutate(
+    lower = cases + n_suppressed,
+    upper = cases + 9 * n_suppressed,
+    area = "Pennsylvania (available counties)"
+  )
+
+# Create time series with suppression band
+p <- ggplot2::ggplot(
+  series_data,
+  ggplot2::aes(x = month, y = cases)
+) +
+  ggplot2::geom_ribbon(
+    data = suppression_band,
+    ggplot2::aes(
+      x = month,
+      ymin = lower,
+      ymax = upper
+    ),
+    inherit.aes = FALSE,
+    fill = "grey50",
+    alpha = 0.35
+  ) +
+  ggplot2::geom_line(
+    color = "#B2182B",
+    linewidth = 1.05,
+    na.rm = TRUE
+  ) +
+  ggplot2::facet_wrap(
+    ~area,
+    ncol = 1,
+    scales = "free_y"
+  ) +
+  ggplot2::scale_x_date(
+    date_breaks = "1 year",
+    date_labels = "%Y"
+  ) +
+  ggplot2::scale_y_continuous(
+    labels = scales::label_comma()
+  ) +
+  ggplot2::labs(
+    title = "Drug Overdose Deaths Over Time",
+    subtitle = paste0("Pennsylvania and Philadelphia, ", format(min(dat$month, na.rm = TRUE), "%B %Y"),
+  "–",
+  format(latest_month, "%B %Y")
+),    x = "Year",
+    y = "Deaths (rolling 12-month count)",
+    caption = paste(
+      "Gray band: possible suppressed deaths (1–9 per county).",
+      "Panels have different y-axis scales."
+    )
+  ) +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(
+    strip.text = ggplot2::element_text(face = "bold"),
+    plot.title = ggplot2::element_text(face = "bold"),
+    panel.grid.minor = ggplot2::element_blank()
+  )
+
+p
+
+```
+
+> Pennsylvania's reported overdose deaths peaked at `r scales::comma(max(by_period$cases, na.rm = TRUE))` in the 12 months ending `r format(by_period$month[which.max(by_period$cases)], "%B %Y")`, while Philadelphia peaked in `r format(focus_data$month[which.max(focus_data$cases)], "%B %Y")`. Both areas experienced substantial declines through `r format(latest_month, "%B %Y")`. Philadelphia accounted for approximately `r round(100 * focus_data$cases[which.max(focus_data$month)] / by_period$cases[which.max(by_period$month)])`% of Pennsylvania's reported overdose deaths, meaning the two trends overlap. The gray shaded region shows that `r by_period$n_suppressed[which.max(by_period$month)]` suppressed counties could contribute up to `r 9 * by_period$n_suppressed[which.max(by_period$month)]` additional deaths in the latest period. However, this does not explain the substantial statewide decline.
+
+
+
+### About these data
+
+
+- **Outcome and period:** Provisional county-level drug overdose deaths for rolling 12-month periods ending `r format(min(dat$month, na.rm = TRUE), "%B %Y")` through `r format(latest_month, "%B %Y")`.
+- **Population at risk:** Residents of Pennsylvania's 67 counties.
+- **Geography:** Pennsylvania counties, matched to 2020 U.S. Census county boundaries using five-digit FIPS/GEOID codes.
+- **Method:** The map displays annual overdose death rates per 100,000 residents, calculated using the latest rolling 12-month death counts and 2025 Census county population estimates. The time series shows reported overdose death counts for Pennsylvania and Philadelphia, with a shaded region representing the possible contribution of suppressed county counts.- 
+
+- **Source:** CDC National Center for Health Statistics, VSRR Provisional County-Level Drug Overdose Death Counts; U.S. Census Bureau Vintage 2025 County Population Estimates; county boundaries from the U.S. Census Bureau through the `tigris` R package.
+
+- **Suppressed data:** At the latest reporting period (`r format(latest_month, "%B %Y")`), `r sum(is.na(by_area$cases))` counties have suppressed overdose death counts of 1–9. These values remain missing rather than being treated as zero.
+
+- **Limitations:** Provisional overdose death counts may be revised. Suppressed county counts make statewide totals incomplete, although the shaded bounds illustrate their possible contribution. The map uses 2025 population estimates to calculate crude annual death rates, which are not age-adjusted and may be influenced by differences in county age distributions.
+
+### AI Use
+> ChatGPT was used to assist with coding, debugging, and interpreting results throughout the development of my dashboard. Specifically, AI helped with cleaning and organizing the CDC overdose dataset, creating the choropleth map and time series, and explaining data suppression and limitations. I reviewed the generated code and visualizations to ensure they accurately represented the data.
